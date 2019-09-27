@@ -52,7 +52,11 @@ program rte_rrtmgp_clouds
   type(ty_source_func_lw)               :: lw_sources
   !   Shortwave
   real(wp), dimension(:,:), allocatable :: toa_flux
-
+  !
+  ! Clouds
+  !
+  real(wp), allocatable, dimension(:,:) :: lwp, iwp, rel, rei
+  logical,  allocatable, dimension(:,:) :: cloud_mask
   !
   ! Output variables
   !
@@ -84,12 +88,12 @@ program rte_rrtmgp_clouds
   ! Parse command line for any file names, block size
   !
   ! rrtmgp_clouds rrtmgp-clouds.nc $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-lw.nc  128
-  ! rrtmgp_clouds rrtmgp-clouds.nc  $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc  128
+  ! rrtmgp_clouds rrtmgp-clouds.nc $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc  128
   nUserArgs = command_argument_count()
   if (nUserArgs <  4) call stop_on_err("Need to supply input_file k_distribution_file ncol.")
   if (nUserArgs >= 1) call get_command_argument(1,input_file)
   if (nUserArgs >= 2) call get_command_argument(2,k_dist_file)
-  if (nUserArgs >= 3) call get_command_argument(2,cloud_optics_file)
+  if (nUserArgs >= 3) call get_command_argument(3,cloud_optics_file)
   if (nUserArgs >= 4) then
     call get_command_argument(4, ncol_char)
     read(ncol_char, '(i6)') ncol
@@ -150,7 +154,9 @@ program rte_rrtmgp_clouds
   is_lw = .not. is_sw
   !
   ! Should also try with Pade calculations
-  ! call load_cld_padecoeff(cloud_optics, cloud_optics_file)
+  call load_cld_lutcoeff(cloud_optics, cloud_optics_file)
+  ! integer division
+  call stop_on_err(cloud_optics%set_ice_roughness(cloud_optics%get_num_ice_roughness_types()/2))
   ! ----------------------------------------------------------------------------
   !
   ! Problem sizes
@@ -213,13 +219,42 @@ program rte_rrtmgp_clouds
   end if
   ! ----------------------------------------------------------------------------
   !
-  ! Memory allocation
+  ! Fluxes
   !
   allocate(flux_up(ncol,nlay+1), flux_dn(ncol,nlay+1))
-  if(is_sw) allocate(flux_dir(ncol,nlay+1))
-
   fluxes%flux_up => flux_up
   fluxes%flux_dn => flux_dn
+  if(is_sw) then
+    allocate(flux_dir(ncol,nlay+1))
+    fluxes%flux_dn_dir => flux_dir
+  end if
+  !
+  ! Clouds
+  !
+  allocate(lwp(ncol,nlay), iwp(ncol,nlay), &
+           rel(ncol,nlay), rei(ncol,nlay), cloud_mask(ncol,nlay))
+  ! Restrict clouds to troposphere (< 100 hPa = 100*100 Pa)
+  !   and not very close to the ground
+  cloud_mask = p_lay < 100._wp * 100._wp .and. p_lay > 900._wp
+  !
+  ! Ice and liquid will overlap in a few layers
+  !
+  lwp = merge(10._wp, 0._wp, cloud_mask .and. t_lay > 263._wp)
+  iwp = merge(10._wp, 0._wp, cloud_mask .and. t_lay < 273._wp)
+  rel = merge(0.5 * (cloud_optics%get_min_radius_liq() + cloud_optics%get_max_radius_liq()), &
+              0._wp, lwp > 0._wp)
+  rei = merge(0.5 * (cloud_optics%get_min_radius_ice() + cloud_optics%get_max_radius_ice()), &
+              0._wp, iwp > 0._wp)
+  call stop_on_err(                                                       &
+    cloud_optics%cloud_optics(ncol, nlay,                                 &
+                              cloud_optics%get_nband(),                   &
+                              cloud_optics%get_num_ice_roughness_types(), &
+                              lwp > 0._wp, iwp > 0._wp, lwp, iwp, rel, rei, &
+                              clouds))
+
+  !
+  ! Solvers
+  !
   if(is_lw) then
     call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                        t_lay, t_sfc, &
@@ -227,7 +262,6 @@ program rte_rrtmgp_clouds
                                        atmos,        &
                                        lw_sources,   &
                                        tlev = t_lev))
-    ! Cloud optics call goes here
     call stop_on_err(clouds%increment(atmos))
     call stop_on_err(rte_lw(atmos, top_at_1, &
                             lw_sources,      &
@@ -235,7 +269,6 @@ program rte_rrtmgp_clouds
                             fluxes))
     call write_lw_fluxes(input_file, flux_up, flux_dn)
   else
-    fluxes%flux_dn_dir => flux_dir
     call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                        t_lay,        &
                                        gas_concs,    &

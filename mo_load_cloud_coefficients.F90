@@ -54,7 +54,7 @@ contains
     nsize_ice = get_dim_size(ncid,'nsize_ice')
 
     allocate(band_lims_wvn(2, nband))
-    band_lims_wvn = read_field(ncid, 'bnd_limits_wavenumber')
+    band_lims_wvn = read_field(ncid, 'bnd_limits_wavenumber', 2, nband)
 
     ! Read LUT constants
     radliq_lwr = read_field(ncid, 'radliq_lwr')
@@ -81,7 +81,6 @@ contains
     lut_asyice = read_field(ncid, 'lut_asyice',  nsize_ice, nband, nrghice)
 
     ncid = nf90_close(ncid)
-
     call stop_on_err(cloud_spec%load(band_lims_wvn,                      &
                                      radliq_lwr, radliq_upr, radliq_fac, &
                                      radice_lwr, radice_upr, radice_fac, &
@@ -118,7 +117,7 @@ contains
     real(wp),  dimension(:),       allocatable :: pade_sizreg_asyice
     ! -----------------
     ! Open cloud optical property coefficient file
-    if(nf90_open(trim(cld_coeff_file), NF90_WRITE, ncid) /= NF90_NOERR) &
+    if(nf90_open(trim(cld_coeff_file), NF90_NOWRITE, ncid) /= NF90_NOERR) &
        call stop_on_err("load_cld_padecoeff(): can't open file " // trim(cld_coeff_file))
 
     ! Read Pade coefficient dimensions
@@ -131,7 +130,7 @@ contains
 
     !
     allocate(band_lims_wvn(2, nband))
-    band_lims_wvn = read_field(ncid, 'bnd_limits_wavenumber')
+    band_lims_wvn = read_field(ncid, 'bnd_limits_wavenumber', 2, nband)
 
     ! Allocate cloud property Pade coefficient input arrays
     allocate(pade_extliq(nband, nsizereg, ncoeff_ext),   &
