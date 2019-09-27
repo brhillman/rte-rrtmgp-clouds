@@ -154,8 +154,10 @@ program rte_rrtmgp_clouds
   is_lw = .not. is_sw
   !
   ! Should also try with Pade calculations
+  !  call load_cld_padecoeff(cloud_optics, cloud_optics_file)
+  !
   call load_cld_lutcoeff(cloud_optics, cloud_optics_file)
-  ! integer division
+  ! integer division to find a nominal ice roughness
   call stop_on_err(cloud_optics%set_ice_roughness(cloud_optics%get_num_ice_roughness_types()/2))
   ! ----------------------------------------------------------------------------
   !
@@ -245,6 +247,10 @@ program rte_rrtmgp_clouds
               0._wp, lwp > 0._wp)
   rei = merge(0.5 * (cloud_optics%get_min_radius_ice() + cloud_optics%get_max_radius_ice()), &
               0._wp, iwp > 0._wp)
+  ! ----------------------------------------------------------------------------
+  !
+  ! All work from here to the writing of flxues should happen on the GPU
+  !
   call stop_on_err(                                                       &
     cloud_optics%cloud_optics(ncol, nlay,                                 &
                               cloud_optics%get_nband(),                   &
