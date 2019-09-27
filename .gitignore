@@ -1,0 +1,13 @@
+# Module files
+*.mod
+
+# Libraries
+*.a
+
+# Object files
+*.o
+
+# Intel vectorization reports
+*.optrpt
+
+
