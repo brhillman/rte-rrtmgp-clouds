@@ -158,7 +158,7 @@ program rte_rrtmgp_clouds
   !
   call load_cld_lutcoeff(cloud_optics, cloud_optics_file)
   ! integer division to find a nominal ice roughness
-  call stop_on_err(cloud_optics%set_ice_roughness(cloud_optics%get_num_ice_roughness_types()/2))
+  call stop_on_err(cloud_optics%set_ice_roughness(2))
   ! ----------------------------------------------------------------------------
   !
   ! Problem sizes
@@ -194,12 +194,8 @@ program rte_rrtmgp_clouds
   select type(clouds)
     class is (ty_optical_props_1scl)
       call stop_on_err(clouds%alloc_1scl(ncol, nlay))
-      clouds%tau = 0._wp
     class is (ty_optical_props_2str)
       call stop_on_err(clouds%alloc_2str(ncol, nlay))
-      clouds%tau = 0._wp
-      clouds%ssa = 1._wp
-      clouds%g   = 0._wp
     class default
       call stop_on_err("rrtmgp_garand_atmos: Don't recognize the kind of optical properties ")
   end select
@@ -251,13 +247,8 @@ program rte_rrtmgp_clouds
   !
   ! All work from here to the writing of flxues should happen on the GPU
   !
-  call stop_on_err(                                                       &
-    cloud_optics%cloud_optics(ncol, nlay,                                 &
-                              cloud_optics%get_nband(),                   &
-                              cloud_optics%get_num_ice_roughness_types(), &
-                              lwp > 0._wp, iwp > 0._wp, lwp, iwp, rel, rei, &
-                              clouds))
-
+  call stop_on_err(                                      &
+    cloud_optics%cloud_optics(lwp, iwp, rel, rei, clouds))
   !
   ! Solvers
   !
@@ -280,6 +271,7 @@ program rte_rrtmgp_clouds
                                        gas_concs,    &
                                        atmos,        &
                                        toa_flux))
+    call stop_on_err(clouds%delta_scale())
     call stop_on_err(clouds%increment(atmos))
     call stop_on_err(rte_sw(atmos, top_at_1, &
                             mu0,   toa_flux, &
