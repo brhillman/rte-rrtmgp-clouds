@@ -253,6 +253,8 @@ program rte_rrtmgp_clouds
   ! Solvers
   !
   if(is_lw) then
+    !$acc enter data create(atmos, atmos%tau)
+    !$acc enter data create(lw_sources, lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source)
     call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                        t_lay, t_sfc, &
                                        gas_concs,    &
@@ -265,7 +267,9 @@ program rte_rrtmgp_clouds
                             emis_sfc,        &
                             fluxes))
     call write_lw_fluxes(input_file, flux_up, flux_dn)
+    !$acc exit data delete(lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source, lw_sources)
   else
+    !$acc enter data create(toa_flux)
     call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                        t_lay,        &
                                        gas_concs,    &
@@ -278,6 +282,7 @@ program rte_rrtmgp_clouds
                             sfc_alb_dir, sfc_alb_dif, &
                             fluxes))
   call write_sw_fluxes(input_file, flux_up, flux_dn, flux_dir)
+  !$acc exit data delete(toa_flux)
   end if
 
 end program rte_rrtmgp_clouds
