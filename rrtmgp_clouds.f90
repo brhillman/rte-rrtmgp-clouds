@@ -5,7 +5,7 @@ subroutine stop_on_err(error_msg)
 
   if(error_msg /= "") then
     write (error_unit,*) trim(error_msg)
-    write (error_unit,*) "rrtmgp_garand_atmos stopping"
+    write (error_unit,*) "rte_rrtmgp_clouds stopping"
     stop
   end if
 end subroutine stop_on_err
@@ -189,7 +189,7 @@ program rte_rrtmgp_clouds
     class is (ty_optical_props_2str)
       call stop_on_err(atmos%alloc_2str( ncol, nlay, k_dist))
     class default
-      call stop_on_err("rrtmgp_garand_atmos: Don't recognize the kind of optical properties ")
+      call stop_on_err("rte_rrtmgp_clouds: Don't recognize the kind of optical properties ")
   end select
   select type(clouds)
     class is (ty_optical_props_1scl)
@@ -197,7 +197,7 @@ program rte_rrtmgp_clouds
     class is (ty_optical_props_2str)
       call stop_on_err(clouds%alloc_2str(ncol, nlay))
     class default
-      call stop_on_err("rrtmgp_garand_atmos: Don't recognize the kind of optical properties ")
+      call stop_on_err("rte_rrtmgp_clouds: Don't recognize the kind of optical properties ")
   end select
   ! ----------------------------------------------------------------------------
   !  Boundary conditions depending on whether the k-distribution being supplied

@@ -25,7 +25,8 @@ VPATH = ./:$(RRTMGP_BUILD):$(RRTMGP_ROOT)/extensions/:$(RRTMGP_ROOT)/extensions/
 # Compilation rules
 %.o: %.F90
 	$(FC) $(FCFLAGS) $(FCINCLUDE) -c $<
-
+%.o: %.f90
+	$(FC) $(FCFLAGS) $(FCINCLUDE) -c $<
 %: %.o
 	$(FC) $(FCFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
 
