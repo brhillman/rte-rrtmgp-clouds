@@ -77,7 +77,9 @@ program rte_rrtmgp_clouds
   !
   logical :: top_at_1, is_sw, is_lw
 
-  integer :: ncol, nlay, nbnd, ngpt, nUserArgs=0
+  integer  :: ncol, nlay, nbnd, ngpt, nUserArgs=0
+  integer  :: icol, ilay, ibnd
+  real(wp) :: rel_val, rei_val
   character(len=6) :: ncol_char
 
   character(len=256) :: input_file, k_dist_file, cloud_optics_file
@@ -185,17 +187,22 @@ program rte_rrtmgp_clouds
   !
   select type(atmos)
     class is (ty_optical_props_1scl)
+      !$acc enter data copyin(atmos)
       call stop_on_err(atmos%alloc_1scl(ncol, nlay, k_dist))
+      !$acc enter data copyin(atmos) create(atmos%tau)
     class is (ty_optical_props_2str)
       call stop_on_err(atmos%alloc_2str( ncol, nlay, k_dist))
+      !$acc enter data copyin(atmos) create(atmos%tau, atmos%ssa, atmos%g)
     class default
       call stop_on_err("rte_rrtmgp_clouds: Don't recognize the kind of optical properties ")
   end select
   select type(clouds)
     class is (ty_optical_props_1scl)
       call stop_on_err(clouds%alloc_1scl(ncol, nlay))
+      !$acc enter data copyin(clouds) create(clouds%tau)
     class is (ty_optical_props_2str)
       call stop_on_err(clouds%alloc_2str(ncol, nlay))
+      !$acc enter data copyin(clouds) create(clouds%tau, clouds%ssa, clouds%g)
     class default
       call stop_on_err("rte_rrtmgp_clouds: Don't recognize the kind of optical properties ")
   end select
@@ -233,16 +240,22 @@ program rte_rrtmgp_clouds
            rel(ncol,nlay), rei(ncol,nlay), cloud_mask(ncol,nlay))
   ! Restrict clouds to troposphere (< 100 hPa = 100*100 Pa)
   !   and not very close to the ground
-  cloud_mask = p_lay < 100._wp * 100._wp .and. p_lay > 900._wp
-  !
-  ! Ice and liquid will overlap in a few layers
-  !
-  lwp = merge(10._wp, 0._wp, cloud_mask .and. t_lay > 263._wp)
-  iwp = merge(10._wp, 0._wp, cloud_mask .and. t_lay < 273._wp)
-  rel = merge(0.5 * (cloud_optics%get_min_radius_liq() + cloud_optics%get_max_radius_liq()), &
-              0._wp, lwp > 0._wp)
-  rei = merge(0.5 * (cloud_optics%get_min_radius_ice() + cloud_optics%get_max_radius_ice()), &
-              0._wp, iwp > 0._wp)
+  !$acc enter data create(cloud_mask, lwp, iwp, rel, rei)
+  rel_val = 0.5 * (cloud_optics%get_min_radius_liq() + cloud_optics%get_max_radius_liq())
+  rei_val = 0.5 * (cloud_optics%get_min_radius_ice() + cloud_optics%get_max_radius_ice())
+  !$acc parallel loop collapse(2) copyin(t_lay) copyout(lwp, iwp, rel, rei)
+  do ilay=1,nlay
+    do icol=1,ncol
+      cloud_mask(icol,ilay) = p_lay(icol,ilay) < 100._wp * 100._wp .and. p_lay(icol,ilay) > 900._wp
+      !
+      ! Ice and liquid will overlap in a few layers
+      !
+      lwp(icol,ilay) = merge(10._wp, 0._wp, cloud_mask(icol,ilay) .and. t_lay(icol,ilay) > 263._wp)
+      iwp(icol,ilay) = merge(10._wp, 0._wp, cloud_mask(icol,ilay) .and. t_lay(icol,ilay) < 273._wp)
+      rel(icol,ilay) = merge(rel_val, 0._wp, lwp(icol,ilay) > 0._wp)
+      rei(icol,ilay) = merge(rei_val, 0._wp, iwp(icol,ilay) > 0._wp)
+    end do
+  end do
   ! ----------------------------------------------------------------------------
   !
   ! All work from here to the writing of flxues should happen on the GPU
@@ -253,7 +266,6 @@ program rte_rrtmgp_clouds
   ! Solvers
   !
   if(is_lw) then
-    !$acc enter data create(atmos, atmos%tau)
     !$acc enter data create(lw_sources, lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source)
     call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                        t_lay, t_sfc, &
@@ -284,5 +296,6 @@ program rte_rrtmgp_clouds
   call write_sw_fluxes(input_file, flux_up, flux_dn, flux_dir)
   !$acc exit data delete(toa_flux)
   end if
+  !$acc exit data delete(cloud_mask, lwp, iwp, rel, rei)
 
 end program rte_rrtmgp_clouds
