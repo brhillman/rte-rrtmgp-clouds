@@ -9,7 +9,7 @@ subroutine stop_on_err(error_msg)
     stop
   end if
 end subroutine stop_on_err
-
+! ----------------------------------------------------------------------------------
 program rte_rrtmgp_clouds
   use mo_rte_kind,           only: wp
   use mo_optical_props,      only: ty_optical_props, &
@@ -77,10 +77,13 @@ program rte_rrtmgp_clouds
   !
   logical :: top_at_1, is_sw, is_lw
 
-  integer  :: ncol, nlay, nbnd, ngpt, nUserArgs=0
-  integer  :: icol, ilay, ibnd
+  integer  :: ncol, nlay, nbnd, ngpt
+  integer  :: icol, ilay, ibnd, iloop
   real(wp) :: rel_val, rei_val
-  character(len=6) :: ncol_char
+
+  character(len=8) :: char_input
+  integer  :: nUserArgs=0, nloops = 1
+  logical :: use_luts = .true., write_fluxes = .true.
 
   character(len=256) :: input_file, k_dist_file, cloud_optics_file
   ! ----------------------------------------------------------------------------------
@@ -89,19 +92,24 @@ program rte_rrtmgp_clouds
   !
   ! Parse command line for any file names, block size
   !
-  ! rrtmgp_clouds rrtmgp-clouds.nc $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-lw.nc  128
-  ! rrtmgp_clouds rrtmgp-clouds.nc $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc  128
+  ! rrtmgp_clouds rrtmgp-clouds.nc $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-lw.nc  128 1
+  ! rrtmgp_clouds rrtmgp-clouds.nc $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc  128 1
   nUserArgs = command_argument_count()
   if (nUserArgs <  4) call stop_on_err("Need to supply input_file k_distribution_file ncol.")
   if (nUserArgs >= 1) call get_command_argument(1,input_file)
   if (nUserArgs >= 2) call get_command_argument(2,k_dist_file)
   if (nUserArgs >= 3) call get_command_argument(3,cloud_optics_file)
   if (nUserArgs >= 4) then
-    call get_command_argument(4, ncol_char)
-    read(ncol_char, '(i6)') ncol
+    call get_command_argument(4, char_input)
+    read(char_input, '(i8)') ncol
     if(ncol <= 0) call stop_on_err("Specify positive ncol.")
   end if
-  if (nUserArgs >  5) print *, "Ignoring command line arguments beyond the first three..."
+  if (nUserArgs >= 5) then
+    call get_command_argument(5, char_input)
+    read(char_input, '(i8)') nloops
+    if(nloops <= 0) call stop_on_err("Specify positive nloops.")
+  end if
+  if (nUserArgs >  6) print *, "Ignoring command line arguments beyond the first five..."
   if(trim(input_file) == '-h' .or. trim(input_file) == "--help") then
     call stop_on_err("rrtmgp_clouds input_file absorption_coefficients_file cloud_optics_file ncol")
   end if
@@ -158,7 +166,11 @@ program rte_rrtmgp_clouds
   ! Should also try with Pade calculations
   !  call load_cld_padecoeff(cloud_optics, cloud_optics_file)
   !
-  call load_cld_lutcoeff(cloud_optics, cloud_optics_file)
+  if(use_luts) then
+    call load_cld_lutcoeff (cloud_optics, cloud_optics_file)
+  else
+    call load_cld_padecoeff(cloud_optics, cloud_optics_file)
+  end if
   ! integer division to find a nominal ice roughness
   call stop_on_err(cloud_optics%set_ice_roughness(2))
   ! ----------------------------------------------------------------------------
@@ -238,9 +250,10 @@ program rte_rrtmgp_clouds
   !
   allocate(lwp(ncol,nlay), iwp(ncol,nlay), &
            rel(ncol,nlay), rei(ncol,nlay), cloud_mask(ncol,nlay))
+  !$acc enter data create(cloud_mask, lwp, iwp, rel, rei)
+
   ! Restrict clouds to troposphere (< 100 hPa = 100*100 Pa)
   !   and not very close to the ground
-  !$acc enter data create(cloud_mask, lwp, iwp, rel, rei)
   rel_val = 0.5 * (cloud_optics%get_min_radius_liq() + cloud_optics%get_max_radius_liq())
   rei_val = 0.5 * (cloud_optics%get_min_radius_ice() + cloud_optics%get_max_radius_ice())
   !$acc parallel loop collapse(2) copyin(t_lay) copyout(lwp, iwp, rel, rei)
@@ -250,52 +263,61 @@ program rte_rrtmgp_clouds
       !
       ! Ice and liquid will overlap in a few layers
       !
-      lwp(icol,ilay) = merge(10._wp, 0._wp, cloud_mask(icol,ilay) .and. t_lay(icol,ilay) > 263._wp)
-      iwp(icol,ilay) = merge(10._wp, 0._wp, cloud_mask(icol,ilay) .and. t_lay(icol,ilay) < 273._wp)
+      lwp(icol,ilay) = merge(10._wp,  0._wp, cloud_mask(icol,ilay) .and. t_lay(icol,ilay) > 263._wp)
+      iwp(icol,ilay) = merge(10._wp,  0._wp, cloud_mask(icol,ilay) .and. t_lay(icol,ilay) < 273._wp)
       rel(icol,ilay) = merge(rel_val, 0._wp, lwp(icol,ilay) > 0._wp)
       rei(icol,ilay) = merge(rei_val, 0._wp, iwp(icol,ilay) > 0._wp)
     end do
   end do
+  !$acc exit data delete(cloud_mask)
   ! ----------------------------------------------------------------------------
   !
-  ! All work from here to the writing of flxues should happen on the GPU
+  ! Multiple iterations for big problem sizes, and to help identify data movement
+  !   For CPUs we can introduce OpenMP threading over loop iterations
   !
-  call stop_on_err(                                      &
-    cloud_optics%cloud_optics(lwp, iwp, rel, rei, clouds))
-  !
-  ! Solvers
-  !
-  if(is_lw) then
-    !$acc enter data create(lw_sources, lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source)
-    call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
-                                       t_lay, t_sfc, &
-                                       gas_concs,    &
-                                       atmos,        &
-                                       lw_sources,   &
-                                       tlev = t_lev))
-    call stop_on_err(clouds%increment(atmos))
-    call stop_on_err(rte_lw(atmos, top_at_1, &
-                            lw_sources,      &
-                            emis_sfc,        &
-                            fluxes))
-    call write_lw_fluxes(input_file, flux_up, flux_dn)
-    !$acc exit data delete(lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source, lw_sources)
-  else
-    !$acc enter data create(toa_flux)
-    call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
-                                       t_lay,        &
-                                       gas_concs,    &
-                                       atmos,        &
-                                       toa_flux))
-    call stop_on_err(clouds%delta_scale())
-    call stop_on_err(clouds%increment(atmos))
-    call stop_on_err(rte_sw(atmos, top_at_1, &
-                            mu0,   toa_flux, &
-                            sfc_alb_dir, sfc_alb_dif, &
-                            fluxes))
-  call write_sw_fluxes(input_file, flux_up, flux_dn, flux_dir)
-  !$acc exit data delete(toa_flux)
-  end if
-  !$acc exit data delete(cloud_mask, lwp, iwp, rel, rei)
+  do iloop = 1, nloops
+    call stop_on_err(                                      &
+      cloud_optics%cloud_optics(lwp, iwp, rel, rei, clouds))
+    !
+    ! Solvers
+    !
+    if(is_lw) then
+      !$acc enter data create(lw_sources, lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source)
+      call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
+                                         t_lay, t_sfc, &
+                                         gas_concs,    &
+                                         atmos,        &
+                                         lw_sources,   &
+                                         tlev = t_lev))
+      call stop_on_err(clouds%increment(atmos))
+      call stop_on_err(rte_lw(atmos, top_at_1, &
+                              lw_sources,      &
+                              emis_sfc,        &
+                              fluxes))
+      !$acc exit data delete(lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source, lw_sources)
+    else
+      !$acc enter data create(toa_flux)
+      call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
+                                         t_lay,        &
+                                         gas_concs,    &
+                                         atmos,        &
+                                         toa_flux))
+      call stop_on_err(clouds%delta_scale())
+      call stop_on_err(clouds%increment(atmos))
+      call stop_on_err(rte_sw(atmos, top_at_1, &
+                              mu0,   toa_flux, &
+                              sfc_alb_dir, sfc_alb_dif, &
+                              fluxes))
+      call write_sw_fluxes(input_file, flux_up, flux_dn, flux_dir)
+      !$acc exit data delete(toa_flux)
+    end if
+    print *, "******************************************************************"
+  end do
+  !$acc exit data delete(lwp, iwp, rel, rei)
 
+  if(is_lw) then
+    if(write_fluxes) call write_lw_fluxes(input_file, flux_up, flux_dn)
+  else
+    if(write_fluxes) call write_sw_fluxes(input_file, flux_up, flux_dn, flux_dir)
+  end if
 end program rte_rrtmgp_clouds
