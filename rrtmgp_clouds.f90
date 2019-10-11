@@ -156,7 +156,8 @@ program rte_rrtmgp_clouds
   allocate(temp_array(ncol, nlay+1))
   temp_array = spread(t_lev(1,:), dim = 1, ncopies=ncol)
   call move_alloc(temp_array, t_lev)
-
+  !$ This puts pressure and temperature arrays on the GPU
+  !$acc enter data copyin(p_lay, p_lev, t_lay, t_lev)
   ! ----------------------------------------------------------------------------
   ! load data into classes
   call load_and_init(k_dist, k_dist_file, gas_concs)
@@ -319,6 +320,7 @@ program rte_rrtmgp_clouds
     print *, "******************************************************************"
   end do
   !$acc exit data delete(lwp, iwp, rel, rei)
+  !$acc exit data delete(p_lay, p_lev, t_lay, t_lev)
 
   if(is_lw) then
     if(write_fluxes) call write_lw_fluxes(input_file, flux_up, flux_dn)
