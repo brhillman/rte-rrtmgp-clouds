@@ -171,7 +171,6 @@ program rte_rrtmgp_clouds
   else
     call load_cld_padecoeff(cloud_optics, cloud_optics_file)
   end if
-  ! integer division to find a nominal ice roughness
   call stop_on_err(cloud_optics%set_ice_roughness(2))
   ! ----------------------------------------------------------------------------
   !
@@ -223,16 +222,22 @@ program rte_rrtmgp_clouds
   !   is LW or SW
   if(is_sw) then
     allocate(toa_flux(ncol, ngpt), sfc_alb_dir(nbnd, ncol), sfc_alb_dif(nbnd, ncol), mu0(ncol))
+    !$acc enter data create(sfc_alb_dir, sfc_alb_dif, mu0)
     ! Ocean-ish values for no particular reason
+    !$acc kernels
     sfc_alb_dir = 0.06_wp
     sfc_alb_dif = 0.06_wp
     mu0 = .86_wp
+    !$acc end kernels
   else
     call stop_on_err(lw_sources%alloc(ncol, nlay, k_dist))
     allocate(t_sfc(ncol), emis_sfc(nbnd, ncol))
+    !$acc enter data create(t_sfc, emis_sfc)
     ! Surface temperature
+    !$acc kernels
     t_sfc = t_lev(1, merge(nlay+1, 1, top_at_1))
     emis_sfc = 0.98_wp
+    !$acc end kernels
   end if
   ! ----------------------------------------------------------------------------
   !
@@ -317,7 +322,10 @@ program rte_rrtmgp_clouds
 
   if(is_lw) then
     if(write_fluxes) call write_lw_fluxes(input_file, flux_up, flux_dn)
+    !$acc exit data delete(t_sfc, emis_sfc)
   else
     if(write_fluxes) call write_sw_fluxes(input_file, flux_up, flux_dn, flux_dir)
+    !$acc exit data delete(sfc_alb_dir, sfc_alb_dif, mu0)
   end if
+  !$acc enter data create(lwp, iwp, rel, rei)
 end program rte_rrtmgp_clouds
