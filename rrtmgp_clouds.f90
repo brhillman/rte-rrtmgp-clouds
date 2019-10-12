@@ -32,8 +32,7 @@ program rte_rrtmgp_clouds
   ! Arrays: dimensions (col, lay)
   real(wp), dimension(:,:),   allocatable :: p_lay, t_lay, p_lev
   real(wp), dimension(:,:),   allocatable :: col_dry
-  real(wp), dimension(:,:),   allocatable, target :: temp_array
-  real(wp), dimension(:),     pointer     :: temp_vec
+  real(wp), dimension(:,:),   allocatable :: temp_array
   !
   ! Longwave only
   !
@@ -125,24 +124,25 @@ program rte_rrtmgp_clouds
   ! For clouds we'll use the first column, repeated over and over
   !   These shenanigans are so we supply the gases as vectors, considered constant over the column dimension
   allocate(temp_array(size(p_lay, 1), nlay))
-  temp_vec => temp_array(1,:)
+  !!$acc enter data create(temp_array)
   call stop_on_err(gas_concs_garand%get_vmr('h2o', temp_array))
-  call stop_on_err(gas_concs%set_vmr       ('h2o', temp_vec))
+  call stop_on_err(gas_concs%set_vmr       ('h2o', temp_array(1,:)))
   call stop_on_err(gas_concs_garand%get_vmr('co2', temp_array))
-  call stop_on_err(gas_concs%set_vmr       ('co2', temp_vec))
+  call stop_on_err(gas_concs%set_vmr       ('co2', temp_array(1,:)))
   call stop_on_err(gas_concs_garand%get_vmr('o3' , temp_array))
-  call stop_on_err(gas_concs%set_vmr       ('o3' , temp_vec))
+  call stop_on_err(gas_concs%set_vmr       ('o3' , temp_array(1,:)))
   call stop_on_err(gas_concs_garand%get_vmr('n2o', temp_array))
-  call stop_on_err(gas_concs%set_vmr       ('n2o', temp_vec))
+  call stop_on_err(gas_concs%set_vmr       ('n2o', temp_array(1,:)))
   call stop_on_err(gas_concs_garand%get_vmr('co' , temp_array))
-  call stop_on_err(gas_concs%set_vmr       ('co' , temp_vec))
+  call stop_on_err(gas_concs%set_vmr       ('co' , temp_array(1,:)))
   call stop_on_err(gas_concs_garand%get_vmr('ch4', temp_array))
-  call stop_on_err(gas_concs%set_vmr       ('ch4', temp_vec))
+  call stop_on_err(gas_concs%set_vmr       ('ch4', temp_array(1,:)))
   call stop_on_err(gas_concs_garand%get_vmr('o2' , temp_array))
-  call stop_on_err(gas_concs%set_vmr       ('o2' , temp_vec))
+  call stop_on_err(gas_concs%set_vmr       ('o2' , temp_array(1,:)))
   call stop_on_err(gas_concs_garand%get_vmr('n2' , temp_array))
-  call stop_on_err(gas_concs%set_vmr       ('n2' , temp_vec))
-  deallocate(temp_array); nullify(temp_vec)
+  call stop_on_err(gas_concs%set_vmr       ('n2' , temp_array(1,:)))
+  deallocate(temp_array)
+  !!$acc exit data delete(temp_array)
   !  If we trusted in Fortran allocate-on-assign we could skip the temp_array here
   allocate(temp_array(ncol, nlay))
   temp_array = spread(p_lay(1,:), dim = 1, ncopies=ncol)
