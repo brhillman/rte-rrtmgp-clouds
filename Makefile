@@ -52,7 +52,7 @@ all: rrtmgp_clouds
 
 rrtmgp_clouds: $(ADDITIONS) rrtmgp_clouds.o
 
-rrtmgp_clouds.o: $(ADDITIONS) rrtmgp_clouds.f90
+rrtmgp_clouds.o: $(ADDITIONS) rrtmgp_clouds.F90
 
 mo_cloud_optics.o: mo_cloud_optics.F90
 mo_load_coefficients.o: mo_simple_netcdf.o mo_load_coefficients.F90
