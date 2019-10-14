@@ -60,4 +60,4 @@ mo_garand_atmos_io.o:   mo_simple_netcdf.o mo_garand_atmos_io.F90
 mo_load_cloud_coefficients.o: mo_simple_netcdf.o mo_cloud_optics.o mo_load_cloud_coefficients.F90
 
 clean:
-	-rm ../rrtmgp_garand_atmos *.o *.optrpt ../*.optrpt *.mod
+	-rm *.o *.optrpt *.mod
