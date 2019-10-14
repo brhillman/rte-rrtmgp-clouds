@@ -20,6 +20,14 @@ FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
 LIBS      += -lnetcdff -lnetcdf
 
+#
+# Build with GPTL timing if GPTL_ROOT is set
+#
+ifdef GPTL_ROOT
+    FCFLAGS += -DUSE_TIMING -I$(GPTL_ROOT)/include
+    LDFLAGS += -L$(GPTL_ROOT)/lib -lgptl -lgptl
+endif
+
 VPATH = ./:$(RRTMGP_BUILD):$(RRTMGP_ROOT)/extensions/:$(RRTMGP_ROOT)/extensions/cloud_optics:$(RRTMGP_ROOT)/examples
 
 # Compilation rules
