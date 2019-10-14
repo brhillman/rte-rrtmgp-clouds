@@ -251,7 +251,7 @@ program rte_rrtmgp_clouds
   !   is LW or SW
   if(is_sw) then
     allocate(toa_flux(ncol, ngpt), sfc_alb_dir(nbnd, ncol), sfc_alb_dif(nbnd, ncol), mu0(ncol))
-    !$acc enter data create(sfc_alb_dir, sfc_alb_dif, mu0)
+    !!$acc enter data create(sfc_alb_dir, sfc_alb_dif, mu0)
     ! Ocean-ish values for no particular reason
     sfc_alb_dir = 0.06_wp
     sfc_alb_dif = 0.06_wp
@@ -259,7 +259,7 @@ program rte_rrtmgp_clouds
   else
     call stop_on_err(lw_sources%alloc(ncol, nlay, k_dist))
     allocate(t_sfc(ncol), emis_sfc(nbnd, ncol))
-    !$acc enter data create(t_sfc, emis_sfc)
+    !!$acc enter data create(t_sfc, emis_sfc)
     ! Surface temperature
     t_sfc = t_lev(1, merge(nlay+1, 1, top_at_1))
     emis_sfc = 0.98_wp
@@ -341,7 +341,6 @@ program rte_rrtmgp_clouds
       call write_sw_fluxes(input_file, flux_up, flux_dn, flux_dir)
       !$acc exit data delete(toa_flux)
     end if
-    print *, "******************************************************************"
   end do
   !$acc exit data delete(lwp, iwp, rel, rei)
   !!$acc exit data delete(p_lay, p_lev, t_lay, t_lev)

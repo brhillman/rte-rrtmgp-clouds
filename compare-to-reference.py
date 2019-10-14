@@ -5,9 +5,14 @@
 import os
 import numpy as np
 import xarray as xr
+import sys
 
-ref_dir  = "ref"
-tst_dir = "."
+if len(sys.argv) == 3:
+    ref_dir = sys.argv[1]
+    tst_dir = sys.argv[2]
+else:
+    print('usage: compare-to-reference.py <reference dir> <test dir>')
+    raise SystemExit(1)
 
 #
 # Comparing reference and test results
