@@ -3,14 +3,33 @@
 # Setup Summit modules
 source summit_modules.sh
 
+# Parse arguments
 gpu=0
-if [ $# -eq 1 ]; then
-    gpu=$1
-elif [ $# -gt 1 ]; then
-    echo "usage: `basename $0` <GPU>"
-    echo "       GPU = [0: use CPU; 1: use GPU]"
-    exit 1
-fi
+for i in "$@"; do
+    case $i in
+        --gpu=*)
+            gpu="${i#*=}"
+            shift
+            ;;
+        --help)
+            echo "usage: `basename $0` <args>"
+            echo ""
+            echo "Arguments:"
+            echo ""
+            echo "--gpu=<1, 0>          Flag for whether or not to build for GPU (0: CPU, 1: GPU)"
+            echo "--help                Display help message"
+            echo ""
+            echo "Author: Ben Hillman (bhillma@sandia.gov)"
+            exit 0
+            ;;
+        *)
+            echo "Argument $i not recognized."
+            exit 1
+            ;;
+    esac
+done
+
+
 
 # Set paths and compiler flags
 export RRTMGP_ROOT=${HOME}/codes/rte-rrtmgp/branches/improve-cloud-optics-example-gpu
