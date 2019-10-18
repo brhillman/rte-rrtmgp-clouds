@@ -306,32 +306,45 @@ program rte_rrtmgp_clouds
     !
     if(is_lw) then
       !$acc enter data create(lw_sources, lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source)
+      call tstart('gas_optics')
       call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                          t_lay, t_sfc, &
                                          gas_concs,    &
                                          atmos,        &
                                          lw_sources,   &
                                          tlev = t_lev))
+      call tstop('gas_optics')
+      call tstart('increment_optics')
       call stop_on_err(clouds%increment(atmos))
+      call tstop('increment_optics')
+      call tstart('rte_lw')
       call stop_on_err(rte_lw(atmos, top_at_1, &
                               lw_sources,      &
                               emis_sfc,        &
                               fluxes))
+      call tstop('rte_lw')
       !$acc exit data delete(lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source, lw_sources)
     else
       !$acc enter data create(toa_flux)
+      call tstart('gas_optics')
       call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                          t_lay,        &
                                          gas_concs,    &
                                          atmos,        &
                                          toa_flux))
+      call tstop('gas_optics')
+      call tstart('delta_scale')
       call stop_on_err(clouds%delta_scale())
+      call tstop('delta_scale')
+      call tstart('increment_optics')
       call stop_on_err(clouds%increment(atmos))
+      call tstop('increment_optics')
+      call tstart('rte_sw')
       call stop_on_err(rte_sw(atmos, top_at_1, &
                               mu0,   toa_flux, &
                               sfc_alb_dir, sfc_alb_dif, &
                               fluxes))
-      call write_sw_fluxes(input_file, flux_up, flux_dn, flux_dir)
+      call tstop('rte_sw')
       !$acc exit data delete(toa_flux)
     end if
   end do
