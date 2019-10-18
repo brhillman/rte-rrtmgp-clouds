@@ -25,10 +25,7 @@ program rte_rrtmgp_clouds
   use mo_load_cloud_coefficients, &
                              only: load_cld_lutcoeff, load_cld_padecoeff
   use mo_garand_atmos_io,    only: read_atmos, write_lw_fluxes, write_sw_fluxes
-
-#ifdef USE_TIMING
-  use gptl
-#endif
+  use mo_timing,             only: tinitialize, tfinalize, tstart, tstop, tpr_file
 
   implicit none
   ! ----------------------------------------------------------------------------------
@@ -91,17 +88,20 @@ program rte_rrtmgp_clouds
 
   character(len=256) :: input_file, k_dist_file, cloud_optics_file
 
-  ! Error code for timing library calls
-  integer :: err
-
   ! ----------------------------------------------------------------------------------
   ! Code
   ! ----------------------------------------------------------------------------------
+  !  
+  ! Initialize timers
+  !
+  call tinitialize()
+  call tstart('rrtmgp_clouds')
   !
   ! Parse command line for any file names, block size
   !
   ! rrtmgp_clouds rrtmgp-clouds.nc $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-lw.nc  128 1
   ! rrtmgp_clouds rrtmgp-clouds.nc $RRTMGP_ROOT/rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc $RRTMGP_ROOT/extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc  128 1
+  call tstart('parse_arguments')
   nUserArgs = command_argument_count()
   if (nUserArgs <  4) call stop_on_err("Need to supply input_file k_distribution_file ncol.")
   if (nUserArgs >= 1) call get_command_argument(1,input_file)
@@ -121,33 +121,21 @@ program rte_rrtmgp_clouds
   if(trim(input_file) == '-h' .or. trim(input_file) == "--help") then
     call stop_on_err("rrtmgp_clouds input_file absorption_coefficients_file cloud_optics_file ncol")
   end if
-#ifdef USE_TIMING
-  !  
-  ! Initialize GPTL timers
-  !
-  err = gptlinitialize()
-  err = gptlstart('rrtmgp_clouds')
-#endif
+  call tstop('parse_arguments')
   !
   ! Read temperature, pressure, gas concentrations.
   !   Arrays are allocated as they are read
   !
-#ifdef USE_TIMING
-  err = gptlstart('read_atmos')
-#endif
+  call tstart('read_atmos')
   call read_atmos(input_file,                 &
                   p_lay, t_lay, p_lev, t_lev, &
                   gas_concs_garand, col_dry)
   deallocate(col_dry)
-#ifdef USE_TIMING
-  err = gptlstop('read_atmos')
-#endif
-  nlay = size(p_lay, 2)
+  call tstop('read_atmos')
   ! For clouds we'll use the first column, repeated over and over
   !   These shenanigans are so we supply the gases as vectors, considered constant over the column dimension
-#ifdef USE_TIMING
-  err = gptlstart('copy_columns')
-#endif
+  call tstart('copy_columns')
+  nlay = size(p_lay, 2)
   allocate(temp_array(size(p_lay, 1), nlay))
   !!$acc enter data create(temp_array)
   call stop_on_err(gas_concs_garand%get_vmr('h2o', temp_array))
@@ -181,30 +169,33 @@ program rte_rrtmgp_clouds
   allocate(temp_array(ncol, nlay+1))
   temp_array = spread(t_lev(1,:), dim = 1, ncopies=ncol)
   call move_alloc(temp_array, t_lev)
-#ifdef USE_TIMING
-  err = gptlstop('copy_columns')
-#endif
+  call tstop('copy_columns')
   ! This puts pressure and temperature arrays on the GPU
   !!$acc enter data copyin(p_lay, p_lev, t_lay, t_lev)
   ! ----------------------------------------------------------------------------
   ! load data into classes
+  call tstart('load_kdist_data')
   call load_and_init(k_dist, k_dist_file, gas_concs)
   is_sw = k_dist%source_is_external()
   is_lw = .not. is_sw
+  call tstop('load_kdist_data')
   !
   ! Should also try with Pade calculations
   !  call load_cld_padecoeff(cloud_optics, cloud_optics_file)
   !
+  call tstart('load_cloud_optics')
   if(use_luts) then
     call load_cld_lutcoeff (cloud_optics, cloud_optics_file)
   else
     call load_cld_padecoeff(cloud_optics, cloud_optics_file)
   end if
   call stop_on_err(cloud_optics%set_ice_roughness(2))
+  call tstop('load_cloud_optics')
   ! ----------------------------------------------------------------------------
   !
   ! Problem sizes
   !
+  call tstart('setup_inputs')
   nbnd = k_dist%get_nband()
   ngpt = k_dist%get_ngpt()
   top_at_1 = p_lay(1, 1) < p_lay(1, nlay)
@@ -300,11 +291,13 @@ program rte_rrtmgp_clouds
     end do
   end do
   !$acc exit data delete(cloud_mask)
+  call tstop('setup_inputs')
   ! ----------------------------------------------------------------------------
   !
   ! Multiple iterations for big problem sizes, and to help identify data movement
   !   For CPUs we can introduce OpenMP threading over loop iterations
   !
+  call tstart('calculate_fluxes')
   do iloop = 1, nloops
     call stop_on_err(                                      &
       cloud_optics%cloud_optics(lwp, iwp, rel, rei, clouds))
@@ -344,10 +337,9 @@ program rte_rrtmgp_clouds
   end do
   !$acc exit data delete(lwp, iwp, rel, rei)
   !!$acc exit data delete(p_lay, p_lev, t_lay, t_lev)
+  call tstop('calculate_fluxes')
 
-#ifdef USE_TIMING
-  err = gptlstart('write_fluxes')
-#endif
+  call tstart('write_fluxes')
   if(is_lw) then
     if(write_fluxes) call write_lw_fluxes(input_file, flux_up, flux_dn)
     !$acc exit data delete(t_sfc, emis_sfc)
@@ -356,13 +348,9 @@ program rte_rrtmgp_clouds
     !$acc exit data delete(sfc_alb_dir, sfc_alb_dif, mu0)
   end if
   !$acc enter data create(lwp, iwp, rel, rei)
-#ifdef USE_TIMING
-  err = gptlstop('write_fluxes')
-#endif
+  call tstop('write_fluxes')
 
-#ifdef USE_TIMING
-  err = gptlstop('rrtmgp_clouds')
-  err = gptlpr_file('timing.txt')
-  err = gptlfinalize()
-#endif
+  call tstop('rrtmgp_clouds')
+  call tpr_file('timing.txt')
+  call tfinalize()
 end program rte_rrtmgp_clouds

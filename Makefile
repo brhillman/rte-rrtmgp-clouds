@@ -25,7 +25,8 @@ LIBS      += -lnetcdff -lnetcdf
 #
 ifdef GPTL_ROOT
     FCFLAGS += -DUSE_TIMING -I$(GPTL_ROOT)/include
-    LDFLAGS += -L$(GPTL_ROOT)/lib -lgptl -lgptl
+    LDFLAGS += -L$(GPTL_ROOT)/lib 
+    LIBS += -lgptl -lgptl
 endif
 
 VPATH = ./:$(RRTMGP_BUILD):$(RRTMGP_ROOT)/extensions/:$(RRTMGP_ROOT)/extensions/cloud_optics:$(RRTMGP_ROOT)/examples
@@ -60,4 +61,4 @@ mo_garand_atmos_io.o:   mo_simple_netcdf.o mo_garand_atmos_io.F90
 mo_load_cloud_coefficients.o: mo_simple_netcdf.o mo_cloud_optics.o mo_load_cloud_coefficients.F90
 
 clean:
-	-rm *.o *.optrpt *.mod
+	-rm *.o *.mod

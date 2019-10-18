@@ -6,7 +6,7 @@ source summit_modules.sh
 gpu=0
 if [ $# -eq 1 ]; then
     gpu=$1
-elif [ $# -gt 1]; then
+elif [ $# -gt 1 ]; then
     echo "usage: `basename $0` <GPU>"
     echo "       GPU = [0: use CPU; 1: use GPU]"
     exit 1

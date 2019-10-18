@@ -25,6 +25,19 @@ for i in "$@"; do
             project="${i#*=}"
             shift
             ;;
+        --help)
+            echo "usage: `basename $0` <args>"
+            echo ""
+            echo "Arguments:"
+            echo ""
+            echo "--rundir=<path>       Where to run code"
+            echo "--rrtmgp-root=<path>  Where code lives; executables and binaries will be copied from here"
+            echo "--project=<string>    Account to charge if running in queue"
+            echo "--help                Display help message"
+            echo ""
+            echo "Author: Ben Hillman (bhillma@sandia.gov)"
+            exit 0
+            ;;
         *)
             echo "Argument $i not recognized."
             exit 1
